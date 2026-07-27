@@ -4112,8 +4112,8 @@ def _handle_combo_kernel_per_subkernel_blocks(
     if "stitched_launch_candidates" in combo_meta or stitched_warps is not None:
         # Compile-time autotune emits the distinct winner launch configs (kwargs, num_warps,
         # num_stages) -> combo autotunes kernel-level knobs over them; the chosen block sizes
-        # are passed as args via default_config. No-bench mode has no candidates and bakes its
-        # blocks into the body, so its config carries only backend kwargs (no block args).
+        # are passed as args via default_config. No-bench mode has no candidates and reuses
+        # default_config for any block args present in the signature.
         # Must use the same key-presence check as _combo_has_reduction_subkernel.
         if "stitched_launch_candidates" in combo_meta:
             launch_candidates = combo_meta["stitched_launch_candidates"]
@@ -4122,9 +4122,15 @@ def _handle_combo_kernel_per_subkernel_blocks(
                 triton.Config({**block_config, **kwargs}, num_warps=nw, num_stages=ns)
                 for kwargs, nw, ns in launch_candidates
             ]
+        signature_keys = OrderedSet(triton_meta.get("signature", ()))
+        block_config = {
+            k: v
+            for k, v in (combo_meta.get("default_config") or {}).items()
+            if k in signature_keys
+        }
         return [
             triton.Config(
-                combo_meta["stitched_backend_kwargs"],
+                {**block_config, **combo_meta["stitched_backend_kwargs"]},
                 num_warps=stitched_warps,
                 num_stages=combo_meta["stitched_num_stages"],
             )
