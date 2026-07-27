@@ -5,6 +5,7 @@ import sys
 import unittest
 from types import SimpleNamespace
 
+from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_utils import IS_CI, IS_WINDOWS
 from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_GPU, requires_gpu
 
@@ -273,6 +274,10 @@ class TestMemoryPlanning(TestCase):
             pool0_alloc.end(),
         )
 
+
+instantiate_device_type_tests(
+    TestMemoryPlanning, globals(), except_for="cpu", allow_xpu=True
+)
 
 if __name__ == "__main__":
     if HAS_GPU:
