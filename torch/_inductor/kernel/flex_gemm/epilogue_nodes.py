@@ -82,6 +82,13 @@ class NormalizedNVFP4Pack:
 
 
 @dataclasses.dataclass(frozen=True)
+class NormalizedToBlocked:
+    """Canonical logical source for a blocked-output transform."""
+
+    source: torch.fx.Node
+
+
+@dataclasses.dataclass(frozen=True)
 class NormalizedUnsupportedReduction:
     """Canonical source and target for an unsupported reduction."""
 
@@ -98,6 +105,7 @@ NormalizedNode = (
     | NormalizedSplit
     | NormalizedSelect
     | NormalizedNVFP4Pack
+    | NormalizedToBlocked
     | NormalizedUnsupportedReduction
 )
 
@@ -151,13 +159,20 @@ def normalize_flex_gemm_epilogue_fx_node(
                 for arg in shape
             ),
         )
-    if node.target is torch.ops.flex_gemm.nvfp4_pack.default:
+    if node.target in (
+        torch.ops.flex_gemm.nvfp4_pack.default,
+        torch.ops.flex_gemm.to_blocked.default,
+    ):
         source = node.args[0]
         if not isinstance(source, torch.fx.Node):
             raise AssertionError(
                 f"malformed FlexGEMM output transform: {node.format_node()}"
             )
-        return NormalizedNVFP4Pack(source)
+        return (
+            NormalizedNVFP4Pack(source)
+            if node.target is torch.ops.flex_gemm.nvfp4_pack.default
+            else NormalizedToBlocked(source)
+        )
     if node.target in FUNCTION_REDUCTION_TYPES:
         source = node.args[0]
         if not isinstance(source, torch.fx.Node):
