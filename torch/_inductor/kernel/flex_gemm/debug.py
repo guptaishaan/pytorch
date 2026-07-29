@@ -15,6 +15,7 @@ from torch._logging import LazyString, trace_structured
 
 from .epilogue_nodes import (
     NormalizedGetItem,
+    NormalizedNVFP4Pack,
     NormalizedPrepareSoftmax,
     NormalizedReduction,
     NormalizedSelect,
@@ -183,6 +184,8 @@ def _format_normalized_dataflow(node: torch.fx.Node, normalized: Any) -> str:
             operation = f"split(size={split_size}, dim={dim})"
         case NormalizedSelect(dim=dim, index=index):
             operation = f"select(dim={dim}, index={index})"
+        case NormalizedNVFP4Pack():
+            operation = "nvfp4_pack"
         case NormalizedUnsupportedReduction():
             operation = f"unsupported_reduction({node.target})"
         case _:

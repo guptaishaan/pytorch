@@ -52,6 +52,7 @@ from torch._inductor.kernel.flex_gemm.constraints import (
     LOCAL_REDUCE_SINGLE_PHYSICAL_FINALIZE_ERROR,
     LOCAL_REDUCE_SOURCE_EXPRESSION_ERROR,
     local_reduce_unsupported_tensorssa_error,
+    statically_known_equal,
     statically_known_shape_equal,
     validate_local_reduce_feed_main_capability,
     validate_local_reduce_tensorssa_group_size,
@@ -60,6 +61,7 @@ from torch._inductor.kernel.flex_gemm.epilogue_nodes import (
     normalize_flex_gemm_epilogue_fx_node,
     NormalizedGetItem,
     NormalizedNode,
+    NormalizedNVFP4Pack,
     NormalizedPrepareSoftmax,
     NormalizedReduction,
     NormalizedSelect,
@@ -997,6 +999,30 @@ def match_grouped_main_lane(
             structural_values=(split_size,),
         )
 
+    if isinstance(normalized, NormalizedNVFP4Pack):
+        grouped = normalized.source
+        view_normalized = local_reduce.graph.normalized_nodes.get(grouped)
+        shape = tensor_meta_shape(grouped)
+        group = 2
+        if (
+            not isinstance(view_normalized, NormalizedView)
+            or shape is None
+            or len(shape) != 3
+            or not statically_known_equal(shape[-1], group)
+            or not statically_known_shape_equal(
+                (shape[0], shape[1] * group), gemm_shape
+            )
+            or not local_reduce.graph.depends_on(view_normalized.source, gemm)
+        ):
+            return None
+        return GroupedMainLaneMatch(
+            source=view_normalized.source,
+            group=group,
+            chunked=False,
+            indices=tuple(range(group)),
+            layout_node=grouped,
+        )
+
     if not isinstance(normalized, NormalizedSelect):
         return None
     view = normalized.source
@@ -1376,7 +1402,7 @@ class FlexGemmEpilogueEmitter:
             return False
         source = node.all_input_nodes[0]
         normalized = self.normalized_nodes.get(source)
-        if not isinstance(normalized, FlexGemmNormalizedReduction):
+        if not isinstance(normalized, NormalizedReduction):
             return False
         reduction_input = normalized.source
         layout = self.grouped_tensors.get(reduction_input)
@@ -1653,6 +1679,7 @@ class FlexGemmEpilogueEmitter:
             ")\n"
             "from torch._inductor.kernel.flex_gemm.quant_intrinsics import (\n"
             "    mx_e8m0_scale_intrinsic,\n"
+            "    nvfp4_pack_intrinsic,\n"
             ")\n\n"
             f"{local_reduce_source}"
             f"@cute.jit\ndef {name}({epilogue_params}):\n"

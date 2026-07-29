@@ -75,6 +75,13 @@ class NormalizedSelect:
 
 
 @dataclasses.dataclass(frozen=True)
+class NormalizedNVFP4Pack:
+    """Canonical grouped source for a terminal NVFP4 pack."""
+
+    source: torch.fx.Node
+
+
+@dataclasses.dataclass(frozen=True)
 class NormalizedUnsupportedReduction:
     """Canonical source and target for an unsupported reduction."""
 
@@ -90,6 +97,7 @@ NormalizedNode = (
     | NormalizedGetItem
     | NormalizedSplit
     | NormalizedSelect
+    | NormalizedNVFP4Pack
     | NormalizedUnsupportedReduction
 )
 
@@ -143,6 +151,13 @@ def normalize_flex_gemm_epilogue_fx_node(
                 for arg in shape
             ),
         )
+    if node.target is torch.ops.flex_gemm.nvfp4_pack.default:
+        source = node.args[0]
+        if not isinstance(source, torch.fx.Node):
+            raise AssertionError(
+                f"malformed FlexGEMM output transform: {node.format_node()}"
+            )
+        return NormalizedNVFP4Pack(source)
     if node.target in FUNCTION_REDUCTION_TYPES:
         source = node.args[0]
         if not isinstance(source, torch.fx.Node):
