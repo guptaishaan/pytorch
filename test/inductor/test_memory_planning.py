@@ -106,7 +106,6 @@ class TestMemoryPlanningOutputGroups(TestCase):
 
 
 @requires_gpu()
-@config.patch(memory_planning=True)
 class TestMemoryPlanning(TestCase):
     def _generate(self, *, device):
         """
@@ -126,6 +125,7 @@ class TestMemoryPlanning(TestCase):
         z = torch.randn((2, 3), device=device)
         return (Foo(), (x, y, z))
 
+    @config.patch(memory_planning=True)
     def test_python_wrapper(self, device):
         f, args = self._generate(device=device)
         compiled = torch.compile(f, dynamic=True)
@@ -141,6 +141,7 @@ class TestMemoryPlanning(TestCase):
         self.assertTrue(same(f(*args), result))
 
     @skipIfRocm(msg="https://github.com/pytorch/pytorch/issues/180122")
+    @config.patch(memory_planning=True)
     def test_cpp_wrapper(self, device):
         f, args = self._generate(device=device)
         compiled = torch.compile(f, dynamic=True)
@@ -154,6 +155,7 @@ class TestMemoryPlanning(TestCase):
         ).run(code)
         self.assertTrue(same(f(*args), result))
 
+    @config.patch(memory_planning=True)
     def test_aoti(self, device):
         f, args = self._generate(device=device)
         dim0_x = Dim("dim0_x", min=1, max=2048)
@@ -179,7 +181,7 @@ class TestMemoryPlanning(TestCase):
         IS_LINUX or TEST_WITH_ROCM or TEST_WITH_SLOW,
         "https://github.com/pytorch/pytorch/issues/168171",
     )
-    @config.patch({"triton.autotune_at_compile_time": False})
+    @config.patch({"triton.autotune_at_compile_time": False, "memory_planning": True})
     def test_unbacked_symint(self, device):
         # when allocation's size has unbacked symints
         # the unbacked symints are only available after computed
