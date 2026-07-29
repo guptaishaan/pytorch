@@ -129,6 +129,72 @@ def fix_rpath(libtorch_lib: Path) -> None:
                 )
 
 
+# Directories in the CUDA manylinux builder that hold the NVIDIA runtime
+# libraries the wheel was built against. Only libraries found here get bundled,
+# which naturally excludes base system libs (libc, libstdc++, ...) and the
+# driver stub (stubs/ is a subdir and is never searched).
+_CUDA_LIB_DIRS = (
+    "/usr/local/cuda/lib64",
+    "/usr/local/cuda/extras/CUPTI/lib64",
+)
+
+
+def _is_cuda_variant(desired_cuda: str) -> bool:
+    """True for CUDA builds (cu126, cu130, ...); False for cpu/rocm/xpu."""
+    return desired_cuda.startswith("cu")
+
+
+def _print_needed(patchelf: str, so_path: Path) -> list[str]:
+    result = subprocess.run(
+        [patchelf, "--print-needed", str(so_path)],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.split() if result.returncode == 0 else []
+
+
+def bundle_cuda_deps(libtorch_lib: Path) -> None:
+    """Copy the NVIDIA runtime deps into lib/ so the tarball is self-contained.
+
+    Post small-wheel (pytorch/pytorch#180612), the CUDA wheel leaves its NVIDIA
+    dependencies (libnvshmem_host.so.3, libcudart.so.13, libcublas, libcudnn,
+    ...) out of torch/lib/ -- at wheel runtime they are supplied by the pip
+    nvidia-* packages. The libtorch shared-with-deps tarball has no such
+    packages, so pull those libraries in from the CUDA toolkit installed in the
+    build container, resolving NEEDED entries transitively. Only .so's that
+    exist under the CUDA lib dirs are copied, so system libs and the driver stub
+    are left for the loader to find. Must run inside a CUDA manylinux builder.
+    """
+    patchelf = shutil.which("patchelf")
+    if not patchelf:
+        raise FileNotFoundError(
+            "patchelf not found; the extraction job must run inside a "
+            "manylinux2_28-builder container that ships patchelf"
+        )
+    search_dirs = [Path(d) for d in _CUDA_LIB_DIRS if Path(d).is_dir()]
+    if not search_dirs:
+        raise FileNotFoundError(
+            "No CUDA lib dirs found (expected /usr/local/cuda/lib64); the "
+            "extraction job must run inside a CUDA manylinux builder"
+        )
+
+    present = {p.name for p in libtorch_lib.iterdir() if p.is_file()}
+    queue = [p for p in libtorch_lib.iterdir() if p.is_file() and ".so" in p.name]
+    while queue:
+        for needed in _print_needed(patchelf, queue.pop()):
+            if needed in present:
+                continue
+            src = next((d / needed for d in search_dirs if (d / needed).exists()), None)
+            if src is None:
+                continue  # system lib or driver stub -> resolved at load time
+            dest = libtorch_lib / needed
+            # copy2 follows symlinks: writes a real file named by the soname
+            shutil.copy2(src, dest)
+            present.add(needed)
+            queue.append(dest)
+            print(f"  Bundled CUDA dep: {needed} (from {src.parent})")
+
+
 def copy_includes(torch_dir: Path, libtorch_include: Path) -> None:
     torch_include = torch_dir / "include"
     if not torch_include.is_dir():
@@ -349,6 +415,12 @@ def main() -> None:
         # Copy components
         copy_libraries(torch_dir, libtorch_dir / "lib", args.platform)
         if args.platform == "linux":
+            # shared-with-deps must be self-contained: bundle the NVIDIA runtime
+            # libs the small wheel omits, then rewrite all RPATHs to $ORIGIN so
+            # the flat lib/ resolves both torch and bundled deps.
+            with_deps = "with-deps" in args.libtorch_variant
+            if _is_cuda_variant(args.desired_cuda) and with_deps:
+                bundle_cuda_deps(libtorch_dir / "lib")
             fix_rpath(libtorch_dir / "lib")
         copy_includes(torch_dir, libtorch_dir / "include")
         copy_cmake(torch_dir, libtorch_dir / "share")
