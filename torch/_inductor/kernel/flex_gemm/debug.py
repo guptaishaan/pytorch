@@ -152,7 +152,8 @@ def _format_fx_tensor(node: torch.fx.Node) -> str:
 def _format_geometry(geometry: Any) -> str:
     """Format grouped GEMM geometry in logical M/N terms."""
     axis = "M" if geometry.axis == 0 else "N"
-    return f"axis={axis}, group={geometry.group}"
+    swapped = ", TensorSSA-swapped" if geometry.swapped else ""
+    return f"axis={axis}, group={geometry.group}{swapped}"
 
 
 def _format_main_transform(transform: Any | None) -> str:
@@ -288,12 +289,15 @@ def format_flex_gemm_lowering_plan(
     capture_kinds: Sequence[tuple[str, str]],
     aux_metas: Sequence[torch.Tensor],
     local_reduce_metas: Sequence[torch.Tensor],
+    *,
+    swap_ab_alignment: int,
 ) -> str:
     """Render buffer allocation and runtime-ABI decisions."""
     lines = [
         "output_storage:",
         f"  logical: shape={tuple(logical_output_size)}, dtype={output_dtype}",
         f"  physical: shape={tuple(physical_output_size)}",
+        f"  swap_ab_alignment: {swap_ab_alignment} elements",
         "",
     ]
     _append_items(
