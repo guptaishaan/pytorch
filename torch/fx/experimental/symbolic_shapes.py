@@ -8182,6 +8182,15 @@ class ShapeEnv:
         lhs = expr.lhs
         rhs = expr.rhs
 
+        # If the converse inequality is already known, the two together mean
+        # lhs == rhs.  Guard on the equality so we get a replacement out of it,
+        # instead of keeping two inequalities that nothing puts back together.
+        if isinstance(expr, (sympy.Le, sympy.Ge)):
+            converse = (sympy.Ge if isinstance(expr, sympy.Le) else sympy.Le)(lhs, rhs)
+            if self._maybe_evaluate_static(converse) is sympy.true:
+                self._maybe_guard_rel(sympy.Eq(lhs, rhs))
+                return
+
         self._refine_ranges(expr)
 
         # The rest of this stuff is for equality only

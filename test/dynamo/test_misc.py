@@ -10568,6 +10568,24 @@ not ___dict_contains('cccccccc', G['sys'].modules)""",
         with self.assertRaises(ConstraintViolationError):
             torch.compile(dyn_fn, backend="eager")(y)
 
+    def test_raise_guard_indirect_full_constraint_two_dims(self):
+        y = torch.randn([5, 5])
+
+        def dyn_fn(x):
+            a, b = x.shape
+            if a > b:
+                return x + 1
+            if a < b:
+                return x - 1
+            if a + b != 10:
+                return x + 2
+            return x + 3
+
+        torch._dynamo.mark_dynamic(y, 0)
+        torch._dynamo.mark_dynamic(y, 1)
+        with self.assertRaises(ConstraintViolationError):
+            torch.compile(dyn_fn, backend="eager")(y)
+
     @torch._dynamo.config.patch(capture_scalar_outputs=True)
     def test_unbacked_empty_tensor(self):
         @torch.compile(backend="eager", fullgraph=True)
