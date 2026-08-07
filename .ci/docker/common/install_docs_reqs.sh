@@ -7,7 +7,13 @@ if [ -n "$KATEX" ]; then
   # Ignore error if gpg-agent doesn't exist (for Ubuntu 16.04)
   apt-get install -y gpg-agent || :
 
-  curl --retry 3 -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+  # Configure the NodeSource repo ourselves rather than piping their setup
+  # script into a root shell; apt then verifies nodejs against the repo key.
+  curl --retry 3 -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+  echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_16.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+  # Keep NodeSource ahead of the distro nodejs, which is newer on noble.
+  printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/nodejs
+  sudo apt-get update
   sudo apt-get install -y nodejs
 
   curl --retry 3 -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -

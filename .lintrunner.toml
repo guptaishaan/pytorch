@@ -1021,6 +1021,29 @@ command = [
 ]
 
 [[linter]]
+code = 'PIPE_TO_SHELL'
+include_patterns = [
+    '.ci/docker/**',
+]
+exclude_patterns = [
+    '**/fb/**',
+]
+command = [
+    'python3',
+    'tools/linter/adapters/grep_linter.py',
+    '--pattern=(curl|wget)[^|]*[|][^|]*(ba)?sh( |$|-)',
+    '--linter-name=PIPE_TO_SHELL',
+    '--error-name=remote script piped into a shell',
+    """--error-description=\
+        This line executes a script fetched at build time without verifying it. \
+        Install from a signed apt repository, or download to a file and check \
+        its digest before running it.
+    """,
+    '--',
+    '@{{PATHSFILE}}'
+]
+
+[[linter]]
 code = 'ACTIONLINT'
 include_patterns = [
     '.github/workflows/*.yml',
