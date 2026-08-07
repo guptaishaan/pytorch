@@ -189,10 +189,14 @@ def _find_rocm_home() -> str | None:
     rocm_home = os.environ.get('ROCM_HOME') or os.environ.get('ROCM_PATH')
     if rocm_home is None:
         # Guess #2: Support for ROCm distribution from TheRock
-        # rocm-sdk-core installs everything under <site-packages>/_rocm_sdk_core
-        # (include/, lib/, bin/, ...), so the module's own location is the
-        # ROCM_HOME we want. Use find_spec to locate it without importing.
-        spec = importlib.util.find_spec('_rocm_sdk_core')
+        # rocm-sdk-devel expands into <site-packages>/_rocm_sdk_devel and is the
+        # tree that carries the headers and hipcc needed to build extensions;
+        # rocm-sdk-core only ships the runtime. Either module's own location is
+        # the ROCM_HOME we want, so prefer devel and fall back to core. Use
+        # find_spec to locate them without importing.
+        spec = importlib.util.find_spec('_rocm_sdk_devel')
+        if spec is None or spec.origin is None:
+            spec = importlib.util.find_spec('_rocm_sdk_core')
         if spec is not None and spec.origin is not None:
             rocm_home = str(Path(spec.origin).parent.resolve())
     if rocm_home is None:

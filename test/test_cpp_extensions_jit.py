@@ -1,8 +1,10 @@
 # Owner(s): ["module: cpp-extensions"]
 
 import glob
+import importlib
 import locale
 import os
+import pathlib
 import random
 import re
 import shutil
@@ -12,6 +14,7 @@ import sys
 import tempfile
 import unittest
 import warnings
+from unittest import mock
 
 import torch
 import torch.backends.cudnn
@@ -81,6 +84,31 @@ with tempfile.TemporaryDirectory() as tmpdir:
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class TestFindRocmHome(common.TestCase):
+    def test_prefers_rocm_sdk_devel_over_core(self):
+        # TheRock's rocm-sdk-devel expands into <site-packages>/_rocm_sdk_devel, which
+        # is the tree carrying the headers and hipcc that extensions build against.
+        # _rocm_sdk_core only ships the runtime.
+        with tempfile.TemporaryDirectory() as site_packages:
+            for pkg in ("_rocm_sdk_core", "_rocm_sdk_devel"):
+                os.mkdir(os.path.join(site_packages, pkg))
+                with open(os.path.join(site_packages, pkg, "__init__.py"), "w"):
+                    pass
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("ROCM_HOME", "ROCM_PATH")
+            }
+            with (
+                mock.patch.dict(os.environ, env, clear=True),
+                mock.patch.object(sys, "path", [site_packages, *sys.path]),
+            ):
+                importlib.invalidate_caches()
+                rocm_home = torch.utils.cpp_extension._find_rocm_home()
+            expected = str(pathlib.Path(site_packages, "_rocm_sdk_devel").resolve())
+            self.assertEqual(rocm_home, expected)
 
 
 # There's only one test that runs gradcheck, run slow mode manually
